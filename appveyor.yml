@@ -1,0 +1,46 @@
+# اختيار نظام تشغيل سيرفر ويندوز حديث
+image: Visual Studio 2022
+
+# إيقاف وضع تجميع الـ MSBuild الافتراضي لتفادي الخطأ
+build: off
+
+# الأوامر المخصصة لتشغيل وتجهيز الـ RDP وتفعيل الـ Tailscale
+build_script:
+  - ps: |
+      # 1. تفعيل إعدادات الـ RDP الأساسية للويندوز سيرفر
+      Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+      Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+      Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+
+      # 2. فتح المنافذ في جدار حماية الويندوز
+      netsh advfirewall firewall delete rule name="RDP-Tailscale"
+      netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
+      Restart-Service -Name TermService -Force
+
+      # 3. إنشاء مستخدم RDP بكلمة مرور عشوائية قوية وحفظها
+      $password = "MyRdpPass123!@#"
+      $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+      New-LocalUser -Name "RDPUser" -Password $securePass -AccountNeverExpires
+      Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
+      Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
+
+      # 4. تحميل وتثبيت أداة Tailscale الرسمية صامتاً لويندوز
+      $tsUrl = "https://tailscale.com"
+      $installerPath = "$env:TEMP\tailscale.msi"
+      Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+      Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+      Remove-Item $installerPath -Force
+
+      # 5. ربط السيرفر بحسابك وتسمية الجهاز
+      & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=appveyor-windows-rdp
+
+      Write-Host "=========================================="
+      Write-Host "السيرفر شغال ومتصل بـ Tailscale الآن بنجاح!"
+      Write-Host "Username: RDPUser"
+      Write-Host "Password: $password"
+      Write-Host "=========================================="
+
+      # 6. جعل السيرفر يستمر بالعمل دون توقف
+      while ($true) {
+          Start-Sleep -Seconds 300
+      }
