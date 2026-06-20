@@ -24,9 +24,10 @@ RUN curl -fsSL https://pkgs.tailscale.com/stable/tailscale_1.66.4_amd64.tgz -o t
 EXPOSE 8080
 
 # تشغيل خادم ويب وهمي متوافق مع بورت Railway وتفعيل اتصال Tailscale
+# تشغيل خادم ويب وهمي متوافق مع بورت Railway وتفعيل اتصال Tailscale مع ميزة SSH
 CMD python3 -m http.server 8080 & \
     tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1055 & \
     sleep 5 && \
-    tailscale up --authkey=${TAILSCALE_AUTH_KEY} --hostname=railway-runner && \
+    tailscale up --authkey=${TAILSCALE_AUTH_KEY} --hostname=railway-runner --ssh && \
     echo "=== السيرفر متصل الآن بـ Tailscale بنجاح ===" && \
     while true; do sleep 300; done
