@@ -13,8 +13,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # تحميل النسخة المحمولة الجاهزة من تيلسكيل وفك ضغطها مباشرة لتخطي جدار الحماية
-RUN curl -fsSL https://tailscale.com/install.sh | sh
-    sudo tailscale up
+RUN curl -fsSL https://tailscale.com/install.sh | sh & sudo tailscale up
 # المنفذ الافتراضي الذي تطلبه منصة Railway لتأكيد عمل السيرفر
 EXPOSE 8080
 
