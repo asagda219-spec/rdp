@@ -17,12 +17,16 @@ build_script:
       netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
       Restart-Service -Name TermService -Force
 
-      # 3. إنشاء مستخدم RDP بكلمة مرور عشوائية قوية وحفظها
-      $password = "MyRdpPass123!@#"
-      $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-      New-LocalUser -Name "RDPUser" -Password $securePass -AccountNeverExpires
-      Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
-      Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
+      # 3. إنشاء مستخدم RDP بكلمة مرور عشوائية قوية وحفظها (تخطي الخطأ إذا كان موجوداً سابقاً)
+      if (-not (Get-LocalUser -Name "RDPUser" -ErrorAction SilentlyContinue)) {
+          $password = "MyRdpPass123!@#"
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name "RDPUser" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
+      } else {
+          $password = "MyRdpPass123!@#"
+      }
 
       # 4. تحميل وتثبيت أداة Tailscale الرسمية صامتاً لويندوز
       $tsUrl = "https://tailscale.com"
@@ -31,8 +35,17 @@ build_script:
       Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
       Remove-Item $installerPath -Force
 
-      # 5. ربط السيرفر بحسابك وتسمية الجهاز
-      & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=appveyor-windows-rdp
+      # خطوة إضافية: الانتظار والتحقق حتى يكتمل وجود ملف تشغيل Tailscale الفعلي في النظام
+      $tsPath = "$env:ProgramFiles\Tailscale\tailscale.exe"
+      $retries = 0
+      while (-not (Test-Path $tsPath) -and $retries -lt 12) {
+          Write-Host "جاري تجميع ملفات الشبكة في الخلفية، انتظر ثوانٍ..."
+          Start-Sleep -Seconds 5
+          $retries++
+      }
+
+      # 5. ربط السيرفر بحسابك وتسمية الجهاز بعد تأكيد وجود الملف
+      & $tsPath up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=appveyor-windows-rdp
 
       Write-Host "=========================================="
       Write-Host "السيرفر شغال ومتصل بـ Tailscale الآن بنجاح!"
