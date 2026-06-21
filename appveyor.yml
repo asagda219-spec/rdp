@@ -17,8 +17,17 @@ build_script:
       netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389 | Out-Null
       Restart-Service -Name TermService -Force
 
-      # 3. إنشاء مستخدم RDP بكلمة مرور عشوائية وتخزينها في ملف
+      # 3. إنشاء مستخدم RDP بباسورد ثابت قوي وتخزينه في ملف
+      $username = "RDPUser"
       $password = "MyRdpPass123!@#"
+      if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+      }
+      # حفظ بيانات الدخول في ملف نصي
+      Set-Content -Path "C:\rdp_credentials.txt" -Value "Username: $username`nPassword: $password"
 
       # 4. تحميل وتثبيت Tailscale MSI من الرابط الرسمي
       $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.66.4-amd64.msi"
@@ -41,8 +50,7 @@ build_script:
           & $tsPath up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=windows-rdp-server
           Write-Host "=========================================="
           Write-Host "السيرفر شغال ومتصل بـ Tailscale الآن بنجاح!"
-          Write-Host "Username: RDPUser"
-          Write-Host "Password تم حفظه في: C:\rdp_password.txt"
+          Write-Host "بيانات الدخول محفوظة في: C:\rdp_credentials.txt"
           Write-Host "=========================================="
       } else {
           Write-Host "فشل تثبيت Tailscale!"
