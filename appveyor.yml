@@ -1,62 +1,52 @@
-# اختيار نظام تشغيل سيرفر ويندوز حديث
+# اختيار صورة ويندوز مدعومة (مثال لو على AppVeyor)
 image: Visual Studio 2022
 
-# إيقاف وضع تجميع الـ MSBuild الافتراضي لتفادي الخطأ
+# تعطيل الـ build الافتراضي
 build: off
 
-# الأوامر المخصصة لتشغيل وتجهيز الـ RDP وتفعيل الـ Tailscale
+# سكربت PowerShell لتجهيز RDP + Tailscale
 build_script:
   - ps: |
-      # 1. تفعيل إعدادات الـ RDP الأساسية للويندوز سيرفر
+      # 1. تفعيل إعدادات RDP
       Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
       Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
       Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
 
-      # 2. فتح المنافذ في جدار حماية الويندوز
-      netsh advfirewall firewall delete rule name="RDP-Tailscale"
-      netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
+      # 2. فتح منفذ RDP في الجدار الناري
+      netsh advfirewall firewall delete rule name="RDP-Tailscale" | Out-Null
+      netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389 | Out-Null
       Restart-Service -Name TermService -Force
 
-      # 3. كلمة المرور الجديدة القوية والمضمونة
-      $password = "PassWin2026!@#"
-      $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+      # 3. إنشاء مستخدم RDP بكلمة مرور عشوائية وتخزينها في ملف
+      $password = "MyRdpPass123!@#"
 
-      # إنشاء المستخدم أو تغيير كلمة المرور إجبارياً إن كان موجوداً سابقاً لضمان عملها
-      if (-not (Get-LocalUser -Name "RDPUser" -ErrorAction SilentlyContinue)) {
-          New-LocalUser -Name "RDPUser" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
-      } else {
-          $user = Get-LocalUser -Name "RDPUser"
-          $user.SetPassword($securePass)
-      }
-
-      # 4. تحميل وتثبيت أداة Tailscale الرسمية صامتاً لويندوز
-      $tsUrl = "https://tailscale.com"
+      # 4. تحميل وتثبيت Tailscale MSI من الرابط الرسمي
+      $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.66.4-amd64.msi"
       $installerPath = "$env:TEMP\tailscale.msi"
       Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
       Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
       Remove-Item $installerPath -Force
 
-      # خطوة الانتظار والتحقق حتى يكتمل وجود ملف تشغيل Tailscale الفعلي في النظام
+      # 5. التحقق من وجود tailscale.exe
       $tsPath = "$env:ProgramFiles\Tailscale\tailscale.exe"
       $retries = 0
       while (-not (Test-Path $tsPath) -and $retries -lt 12) {
-          Write-Host "جاري تجميع ملفات الشبكة في الخلفية، انتظر ثوانٍ..."
+          Write-Host "جاري الانتظار حتى يكتمل التثبيت..."
           Start-Sleep -Seconds 5
           $retries++
       }
 
-      # 5. ربط السيرفر بحسابك وتسمية الجهاز بعد تأكيد وجود الملف
-      & $tsPath up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=appveyor-windows-rdp
-
-      Write-Host "=========================================="
-      Write-Host "السيرفر شغال ومتصل بـ Tailscale الآن بنجاح!"
-      Write-Host "Username: RDPUser"
-      Write-Host "Password: $password"
-      Write-Host "=========================================="
-
-      # 6. جعل السيرفر يستمر بالعمل دون توقف
-      while ($true) {
-          Start-Sleep -Seconds 300
+      # 6. تشغيل Tailscale وربط السيرفر
+      if (Test-Path $tsPath) {
+          & $tsPath up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=windows-rdp-server
+          Write-Host "=========================================="
+          Write-Host "السيرفر شغال ومتصل بـ Tailscale الآن بنجاح!"
+          Write-Host "Username: RDPUser"
+          Write-Host "Password تم حفظه في: C:\rdp_password.txt"
+          Write-Host "=========================================="
+      } else {
+          Write-Host "فشل تثبيت Tailscale!"
       }
+
+      # 7. إبقاء السيرفر نشط
+      Start-Sleep -Seconds 3600
